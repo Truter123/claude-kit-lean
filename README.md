@@ -10,6 +10,9 @@ Three things that cut Claude Code token use, installed by one script.
 
 ## Install
 
+Native Windows with Git Bash (no WSL): do not run `install.sh`. Clone the repo in Git Bash, start Claude
+Code in it and say: "Follow WINDOWS.md". Claude does the install step by step and asks before each change.
+
 In WSL (Ubuntu):
 
 ```bash
