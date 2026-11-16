@@ -29,7 +29,6 @@ When something is in the way:
 - A tool is missing: the script prints its `winget` line and stops. Run the line, reopen Git Bash, run the
   script again. It is safe to run twice.
 - `winget` is blocked: ask IT for jq and a Java 21 runtime.
-- The repos are private: the clone opens a GitHub login window.
 - The script installs no software and never runs as administrator.
 
 ## First day (5 checks, about 10 minutes)
