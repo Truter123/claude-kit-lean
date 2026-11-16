@@ -13,6 +13,8 @@ INPUT=$(cat) || exit 0
 # Fast path: the main loop has no agent_id, so it never pays for jq.
 case "$INPUT" in *'"agent_id"'*) ;; *) exit 0 ;; esac
 
+# Windows (Git Bash): jq.exe writes CRLF unless -b; a trailing \r breaks every comparison.
+case "${KIT_OS:-${OSTYPE:-}}" in msys*|cygwin*|windows) jq() { command jq -b "$@"; } ;; esac
 AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // ""' 2>/dev/null) || exit 0
 [ -n "$AGENT_ID" ] || exit 0
 SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null) || exit 0

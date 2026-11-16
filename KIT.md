@@ -1,15 +1,17 @@
-# Delegation rules
+# Kit rules
 
-Every `Agent` call names a kit agent by its bare name. A bare call is blocked by `agent-guard.sh`.
+This machine has a monthly spend limit. Every token is money, and output costs more than input.
 
-| Agent | Model | For |
-|---|---|---|
-| `scout` | sonnet | one research question, read-only |
-| `engineer` | sonnet | one implementation slice with tests |
-| `worker` | haiku | one exact edit, one command, one bounded sweep |
+| Main model | May spawn |
+|---|---|
+| Sonnet (the default) | `worker` only (Haiku): one exact edit, one command, one bounded sweep |
+| Opus | `worker`, `scout` (Sonnet: one research question, read-only), `engineer` (Sonnet: one slice with tests) |
 
+- An `Agent` call names a kit agent by its bare name. A call with no model is blocked by `agent-guard.sh`.
+- A denied spawn: do the work yourself. Never retry it and never try another agent type.
 - Under about 10 tool calls, work yourself. A spawn costs about 17k tokens.
-- Code questions: `cg_node` / `cg_search` inline. Research that needs more than a few calls goes to `scout`.
-- No graph for the language (C#, Go, Kotlin, PHP): "where is X" goes to `worker`, "how does X work" to `scout`.
-- The prompt is the whole spec: paths, exact change, verify command. A failed `worker` moves up to `engineer`.
-- Main loop on Opus may spawn all three. On Sonnet, only `worker`.
+- The prompt is the whole spec: paths, exact change, verify command.
+- Code questions: the code graph first (`cg_*` tools), not file reads. No graph for the language (C#, Go, Kotlin, PHP): grep.
+- Answer short. No recap of what you did, no code in chat that is already in a file.
+- Long command output: quiet flags, or pipe through `tail -40`. Never print a whole log or build output.
+- Never read a file that is already in context. Read the part you need, not the whole file.

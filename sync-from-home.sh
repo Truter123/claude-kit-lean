@@ -15,21 +15,27 @@ for h in "${HOOKS[@]}"; do
   fi
 done
 
-mkdir -p "$DEST"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
 for h in "${HOOKS[@]}"; do
-  rm -f "$DEST/$h"
-  cp "$SRC/$h" "$DEST/$h"
-  chmod +x "$DEST/$h"
+  cp "$SRC/$h" "$TMP/$h"
 done
 
 bad=0
 for h in "${HOOKS[@]}"; do
-  if grep -nE '/home/[A-Za-z0-9_.-]+' "$DEST/$h" >&2; then
+  if grep -nE '/home/[A-Za-z0-9_.-]+' "$TMP/$h" >&2; then
     echo "sync-from-home: $h holds a machine-specific home path; fix it in the home hooks" >&2
     bad=1
   fi
 done
 [ "$bad" -eq 0 ] || exit 1
+
+mkdir -p "$DEST"
+for h in "${HOOKS[@]}"; do
+  rm -f "$DEST/$h"
+  mv "$TMP/$h" "$DEST/$h"
+  chmod +x "$DEST/$h"
+done
 
 for h in "${HOOKS[@]}"; do
   echo "$DEST/$h"

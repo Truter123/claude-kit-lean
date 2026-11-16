@@ -11,7 +11,9 @@
 # Skips the home directory and any project without an index. Always exits 0.
 # Jar: $CODE_NAVIGATOR_JAR, else the first existing of ${XDG_DATA_HOME:-~/.local/share}/claude-kit/
 # code-navigator/jars/code-navigator.jar and ~/Documents/Tools/code-navigator/jars/code-navigator.jar.
-# .mcp.json: a git-tracked one is never changed; one this script creates is added to info/exclude.
+# .mcp.json: written with jq (skipped when jq is missing); a git-tracked one is never changed; one
+# this script creates is added to info/exclude. On Windows (Git Bash) jar and project paths go
+# through cygpath -m, so java.exe and the MCP client get C:/ paths.
 
 set -u
 JAR="${CODE_NAVIGATOR_JAR:-}"
@@ -29,30 +31,29 @@ git -C "$P" rev-parse --show-toplevel >/dev/null 2>&1 || exit 0
 DB="$P/navigators/code/code-navigator.db"
 STAMP="$P/navigators/code/.last-head"
 
+native_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+
 ensure_mcp_json() {
   local mcp_json="$P/.mcp.json"
   if grep -q '"code-navigator"' "$mcp_json" 2>/dev/null; then
     return 0
   fi
   git -C "$P" ls-files --error-unmatch .mcp.json >/dev/null 2>&1 && return 0
-  if [ ! -f "$mcp_json" ]; then
-    echo '{"mcpServers":{}}' > "$mcp_json"
-    ensure_excluded .mcp.json
+  command -v jq >/dev/null 2>&1 || return 0
+  local created=0 base tmp
+  # -b: on Windows (Git Bash) jq.exe writes CRLF otherwise.
+  local jqb=(jq); case "${KIT_OS:-${OSTYPE:-}}" in msys*|cygwin*|windows) jqb=(jq -b) ;; esac
+  if [ -f "$mcp_json" ]; then base=$(cat "$mcp_json"); else base='{"mcpServers":{}}'; created=1; fi
+  tmp=$(mktemp "$P/.mcp.json.XXXXXX" 2>/dev/null) || return 0
+  if printf '%s' "$base" | "${jqb[@]}" --arg jar "$(native_path "$JAR")" --arg p "$(native_path "$P")" \
+      '.mcpServers = ((.mcpServers // {}) + {"code-navigator": {command: "java", args: ["-jar", $jar, "serve"], env: {CODE_NAVIGATOR_PROJECT: $p}}})' \
+      > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$mcp_json"
+    [ "$created" -eq 1 ] && ensure_excluded .mcp.json
+  else
+    rm -f "$tmp"
   fi
-  MCP_JSON="$mcp_json" JAR="$JAR" P="$P" python3 -c "
-import json, os
-mcp_json = os.environ['MCP_JSON']
-with open(mcp_json) as f:
-    data = json.load(f)
-data.setdefault('mcpServers', {})['code-navigator'] = {
-    'command': 'java',
-    'args': ['-jar', os.environ['JAR'], 'serve'],
-    'env': {'CODE_NAVIGATOR_PROJECT': os.environ['P']},
-}
-with open(mcp_json, 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
-" 2>/dev/null
+  return 0
 }
 
 mode=sync
@@ -92,7 +93,7 @@ ensure_mcp_json
 echo "cg-sync: $mode $P"
 # sqlite-jdbc unpacks its native library into the temp dir; inside the Claude sandbox /tmp is
 # read-only and the sync failed silently, so point it at $TMPDIR (sandbox-writable).
-if timeout 900 java -Dorg.sqlite.tmpdir="${TMPDIR:-/tmp}" -jar "$JAR" "$mode" "$P" >/dev/null 2>&1; then
+if timeout 900 java -Dorg.sqlite.tmpdir="$(native_path "${TMPDIR:-/tmp}")" -jar "$(native_path "$JAR")" "$mode" "$(native_path "$P")" >/dev/null 2>&1; then
   [ -n "$head" ] && printf '%s\n' "$head" > "$STAMP"
 fi
 exit 0

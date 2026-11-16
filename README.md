@@ -1,132 +1,185 @@
 # claude-kit
 
-Three things that cut Claude Code token use, installed by one script.
+One script that sets up Claude Code for a small monthly budget.
 
 | Part | What it does |
 |---|---|
+| **Budget settings** | Sonnet as the main model, a one-hour prompt cache, a capped context, shorter command output. A key you already set is never changed. |
+| **Status line** | Shows the spend at every moment: `Sonnet \| session $1.42 \| month $86 / $250 (pace $133) \| ctx 38%`. |
 | **code-navigator** | Indexes a repo into a graph. Claude answers "where is X" and "who calls X" from the graph (`cg_*` tools), not by reading files. |
-| **RTK** | Shortens shell output (`git`, test runs, `ls`, `grep`) before it reaches the model. |
-| **Three agents** | `scout` and `engineer` run on Sonnet, `worker` on Haiku, so delegated work does not run on Opus. A guard blocks every `Agent` call that names no model, so a spawn never inherits Opus by default. |
+| **Agents and guards** | `worker` runs on Haiku, `scout` and `engineer` on Sonnet. A guard blocks every `Agent` call that names no model, or a model that is not cheaper than the caller. |
 
-## Install
+## Work machine (Windows, Git Bash)
 
-Native Windows with Git Bash (no WSL): do not run `install.sh`. Clone the repo in Git Bash, start Claude
-Code in it and say: "Follow WINDOWS.md". Claude does the install step by step and asks before each change.
+1. Open Git Bash and install the two tools (skip one you already have). Then close and reopen Git Bash.
+   ```bash
+   winget install --id jqlang.jq -e
+   winget install --id EclipseAdoptium.Temurin.21.JRE -e
+   ```
+2. Install the kit:
+   ```bash
+   git clone https://github.com/Truter123/claude-kit-lean ~/tools/claude-kit && ~/tools/claude-kit/install.sh
+   ```
+3. Restart Claude Code.
+4. Check: `~/tools/claude-kit/install.sh --check` prints `[ok]` lines. A `[--]` line marked `not counted`
+   is a hint, not an error.
 
-In WSL (Ubuntu):
+When something is in the way:
 
-```bash
-sudo apt install -y openjdk-21-jre-headless jq python3 git curl
-git clone https://github.com/Truter123/claude-kit-lean ~/tools/claude-kit
-~/tools/claude-kit/install.sh
-```
+- A tool is missing: the script prints its `winget` line and stops. Run the line, reopen Git Bash, run the
+  script again. It is safe to run twice.
+- `winget` is blocked: ask IT for jq and a Java 21 runtime.
+- The repos are private: the clone opens a GitHub login window.
+- The script installs no software and never runs as administrator.
 
-Then restart Claude Code.
+## First day (5 checks, about 10 minutes)
 
-The repo is private, so the clone asks for your GitHub login. The simple way is to log in first:
-`sudo apt install -y gh && gh auth login` (choose HTTPS; git then uses that login).
+1. `~/tools/claude-kit/install.sh --check` ends with exit code 0 and its `model` line says `sonnet`. A
+   `[--] model ...` line means IT set another model: the kit did not change it.
+2. The one-hour cache works: `claude -p "hello" --output-format json | jq .usage.cache_creation` shows
+   `ephemeral_1h_input_tokens` above 0. If Claude Code prints an error about the cache instead, delete the
+   line `"promptCacheTtl": "1h"` from `~/.claude/settings.json`.
+3. Haiku is switched on: `claude --model haiku -p "say ok"` answers. If not, ask IT to enable Haiku in the
+   cloud account. It is the cheapest model and the `worker` agent needs it.
+4. In a repo, in the second session: `/mcp` lists `code-navigator`. Ask "who calls X" about a real class;
+   you see a `cg_*` tool call, not file reads.
+5. After two prompts the status line shows `session $` above `0.00`. If it stays at `$0.00`, the provider
+   reports no cost; note it and report it at home.
 
-The script never runs `sudo`. When a tool is missing or too old (git 2.31+, Java 21+), it prints the
-one `apt` line to run and stops. It is safe to run twice.
+Two notes:
 
-| Flag | Effect |
-|---|---|
-| `--check` | one `[ok]` or `[--]` line per installed item; exit code 0 only when all are `[ok]` |
-| `--no-rtk` | skip the RTK step |
-| `--uninstall` | remove what the kit added (RTK stays) |
-| `--help` | list the flags and variables |
+- Every spawn is denied (`capability graph: ...`): Claude then works alone and nothing breaks. Copy the
+  message and report it at home.
+- On Bedrock and Vertex the names `sonnet` and `haiku` can mean an older version, unless IT set
+  `ANTHROPIC_DEFAULT_SONNET_MODEL` and `ANTHROPIC_DEFAULT_HAIKU_MODEL`. `/status` shows the real model.
 
-`CG_REF` picks the code-navigator branch or tag (default `master`):
-`CG_REF=code-only-navigator ~/tools/claude-kit/install.sh`
+## Daily rules (5)
+
+1. One task, one session. Task done: `/clear`.
+2. Never `/model` or `/effort` inside a session. Each change sends the whole conversation again at the
+   full price. A hard question gets a new terminal: `claude --model opus`, ask, close.
+3. Read the status line. Yellow `month`: you are above the pace. Red: 90% of the budget is gone. 250 USD
+   is about 12 USD per working day.
+4. Paste the 20 lines of a log that matter, not the file.
+5. Say what "done" is: the file and the test command. Fewer turns cost less.
+
+## The status line
+
+`month` is the sum of all sessions on this machine in this calendar month. `pace` is what the spend may be
+today when the budget is spent evenly. Green: under the pace. Yellow: over it. Red: 90% of the budget.
+
+- It is Claude Code's own estimate at list price, for this machine only. The cloud bill is the truth.
+- Another budget: set `KIT_BUDGET_USD` in the `env` block of `~/.claude/settings.json`.
+- The numbers live in `~/.local/share/claude-kit/spend/<year-month>/`, one small file per session.
+- A status line you already had is kept; the kit then shows nothing.
 
 ## What the install changes
 
 - `~/.local/share/claude-kit/code-navigator/`: a shallow clone that holds the jar.
-- `~/.claude/agents/{scout,engineer,worker}.md` and `~/.claude/KIT.md`: links into this repo. A file
-  with the same name is kept as `<name>.bak-kit`.
-- `~/.claude/CLAUDE.md`: one new line, `@KIT.md` (the delegation rules).
-- `~/.claude/settings.json`: eight hook entries. The file from before is kept as
-  `settings.json.bak-kit`.
-- RTK: the binary in `~/.local/bin`, its Bash hook, and three settings in
-  `~/.config/rtk/config.toml`: `exclude_commands = ["git diff"]`, awareness `full`, telemetry
-  `enabled = false`.
+- `~/.claude/agents/{scout,engineer,worker}.md` and `~/.claude/KIT.md`: copies of the files in this repo.
+  A file with the same name is kept as `<name>.bak-kit`. `~/.claude/.claude-kit-state` lists the copies.
+- `~/.claude/CLAUDE.md`: one new line, `@KIT.md` (the rules for Claude, under 20 lines).
+- `~/.claude/settings.json`: the kit's hook entries, the status line, and the keys of
+  `settings/budget.json`. The file from before is kept as `settings.json.bak-kit`.
 
-In each git repo you open (never in `$HOME`) that has Java, TypeScript, Groovy, Dart, Python, SQL or
-shell files, the session-start hook creates `navigators/` (the index) and `.mcp.json` (the server
-entry). `navigators/` and a `.mcp.json` that the hook creates go into `.git/info/exclude`, so
-`git status` stays clean and nothing is committed. An untracked `.mcp.json` that was already there
-gets the server entry added. A `.mcp.json` that git tracks is never changed.
+The budget keys are added only where the key is missing. The provider, the region, the login and the model
+ids that IT set are never changed.
 
-C#, Go, Kotlin and PHP have no graph. There the agents search with grep, and RTK still works.
+| Key | Value | Why |
+|---|---|---|
+| `model` | `sonnet` | Sonnet does most coding work at about half the list price of Opus. |
+| `effortLevel` | `medium` | Thinking is billed as output. |
+| `promptCacheTtl` | `1h` | On a cloud provider the default is 5 minutes. After a longer pause the whole conversation is sent again at the write price. |
+| `autoCompactWindow` | `200000` | A long session cannot grow past 200k tokens. |
+| `awaySummaryEnabled`, `promptSuggestionEnabled` | `false` | No model calls for the recap and the grey suggestions. |
+| `env.BASH_MAX_OUTPUT_LENGTH` | `15000` | Half the default length of command output. |
+| `env.KIT_BUDGET_USD` | `250` | The budget for the status line. |
+| `permissions.deny` | `.env` files | Secrets stay out of the prompt. |
 
-## WSL notes
+In each git repo you open (never in the home directory) that has Java, TypeScript, Groovy, Dart, Python,
+SQL or shell files, the session-start hook creates `navigators/` (the index) and `.mcp.json` (the server
+entry). `navigators/` and a `.mcp.json` that the hook creates go into `.git/info/exclude`, so `git status`
+stays clean and nothing is committed. An untracked `.mcp.json` that was already there gets the server
+entry added and is not excluded. A `.mcp.json` that git tracks is never changed. C#, Go, Kotlin and PHP have no graph; there Claude searches with grep.
 
-- Run Claude Code inside WSL. Keep the kit and your repos in the Linux file system (`~/...`), not
-  under `/mnt/c`: the index is a SQLite file, and SQLite on `/mnt/c` is slow. The installer warns
-  when the kit is under `/mnt/`.
-- Clone the kit inside WSL, not with Git for Windows. The scripts need LF line endings
-  (`.gitattributes` keeps them).
-- `rtk: command not found` after the install: add `~/.local/bin` to `PATH`. The installer prints
-  the line.
+Before the first install at work, check that the company rules allow it: code-navigator builds an index of
+the company code. The index stays on your machine, in `navigators/`.
 
-## First-session checklist
+## Linux and WSL
 
-Before the install:
+```bash
+sudo apt install -y openjdk-21-jre-headless jq git
+git clone https://github.com/Truter123/claude-kit-lean ~/tools/claude-kit && ~/tools/claude-kit/install.sh
+```
 
-- [ ] The company rules allow it. RTK is an outside binary, downloaded by its own installer
-      (`curl ... | sh`). code-navigator builds an index of the company code; the index stays on your
-      machine, in `navigators/`.
+The script never runs `sudo`. When a tool is missing or too old (git 2.31+, Java 21+), it prints the one
+`apt` line to run and stops. In WSL keep the kit and your repos in the Linux file system (`~/...`), not
+under `/mnt/c`: the index is a SQLite file, and SQLite there is slow.
 
-At work:
+## Flags and variables
 
-- [ ] `~/tools/claude-kit/install.sh --check` prints only `[ok]` lines.
-- [ ] `/mcp` lists `code-navigator` in an indexed repo. The first session in a repo builds the
-      index; the server is there from the second session. If Claude Code asks about the server from
-      `.mcp.json`, accept it.
-- [ ] Ask "who calls X" about a real class. You see a `cg_*` tool call, not file reads.
-- [ ] After an hour of work, `rtk gain` shows saved tokens.
+| Flag | Effect |
+|---|---|
+| `--check` | one `[ok]` or `[--]` line per installed item; exit code 0 only when all are `[ok]` |
+| `--uninstall` | remove what the kit added |
+| `--with-rtk` | also run the RTK step (Linux and WSL only) |
+| `--no-rtk` | accepted, does nothing (RTK is off by default) |
+| `--help` | list the flags and variables |
+
+| Variable | Effect |
+|---|---|
+| `CG_REPO` | the code-navigator git URL |
+| `CG_REF` | the code-navigator branch or tag (default `master`). The value is remembered for later runs. |
+| `KIT_OS` | `windows` or `linux`: overrides the system detection (for the tests) |
+| `CLAUDE_CONFIG_DIR`, `XDG_DATA_HOME`, `XDG_CONFIG_HOME` | where the config and the data live |
 
 ## Models
 
-- A main session on Opus may spawn all three agents. On Sonnet, only `worker`.
-- An `Agent` call that names no model is blocked. A kit agent brings its own model. The guard does
-  not stop a built-in agent called with a cheaper model; `KIT.md` tells Claude to use the kit agents.
-- The guard reads the model of the running session, so a `/model` switch counts at once.
+- A main session on Sonnet may spawn `worker` only. On Opus it may also spawn `scout` and `engineer`.
+- The guard reads the model of the running session. It does not know a model id that holds none of the
+  names `haiku`, `sonnet`, `opus` (for example a Bedrock profile ARN); then every spawn is denied and
+  Claude works alone.
 
-## Update
+## Optional: RTK
+
+RTK shortens shell output before it reaches the model. It is off by default: an independent test
+(JetBrains, 2026-07, 425 billed trials) found no saving, and RTK's own counter is not a proof. To try it on
+Linux or WSL: `./install.sh --with-rtk` (needs `curl` and `python3`; it downloads an outside binary). Remove
+it with `rtk init -g --uninstall`.
+
+## Doc templates
+
+`templates/` holds a `CLAUDE.md` skeleton, an ADR template and index, and rule and glossary files for
+domain repos. Copy what the repo needs. See `templates/README.md` for which files a small repo and a
+domain repo take, and for the five rules the templates enforce.
+
+## Update and uninstall
 
 ```bash
-cd ~/tools/claude-kit && git pull && ./install.sh
+cd ~/tools/claude-kit && git pull && ./install.sh     # update; also fetches the newest jar
+~/tools/claude-kit/install.sh --uninstall             # remove
 ```
 
-This also fetches the newest jar on `CG_REF`. Restart Claude Code.
-
-## Uninstall
-
-```bash
-~/tools/claude-kit/install.sh --uninstall
-```
-
-It removes the links, the `@KIT.md` line and the kit's hook entries. It leaves:
-
-- RTK: remove it with `rtk init -g --uninstall`.
-- The jar: delete `~/.local/share/claude-kit`.
-- In each repo: `navigators/` and `.mcp.json` (both untracked).
+Restart Claude Code after both. The uninstall removes the copied files, the `@KIT.md` line, the kit's hook
+entries and the kit's status line. It leaves the budget keys in `settings.json` (it prints them), the jar
+and the spend numbers in `~/.local/share/claude-kit`, and in each repo `navigators/` and `.mcp.json`.
 
 ## Problems
 
-- **`/mcp` has no `code-navigator`.** Either the index is not built yet (wait for the first session
-  to finish, then restart), or the repo has a tracked `.mcp.json`. In the second case add the server
-  for yourself only, from the repo root:
-  `claude mcp add code-navigator -e CODE_NAVIGATOR_PROJECT="$PWD" -- java -jar ~/.local/share/claude-kit/code-navigator/jars/code-navigator.jar serve`
-- **A command is refused once with "a hook changed this call's input".** Claude should type the
-  `rtk` prefix itself. Check that `~/.claude/RTK.md` says "Prefix external programs with `rtk`". If
-  it does not, run `./install.sh` again.
+- **The install fails on Windows.** Run `~/tools/claude-kit/install.sh --check`, copy the output and report
+  it at home. Windows is simulated in the tests; the first real run is on your machine.
+- **`/mcp` has no `code-navigator`.** Either the index is not built yet (wait for the first session to
+  finish, then restart), or the repo has a tracked `.mcp.json`. In the second case add the server for
+  yourself only, from the repo root. Windows:
+  `claude mcp add -s local code-navigator -e CODE_NAVIGATOR_PROJECT="$(pwd -W)" -- java -jar "$(cygpath -m ~/.local/share/claude-kit/code-navigator/jars/code-navigator.jar)" serve`
+  Linux: the same line with `$PWD` and the plain jar path.
+- **The script warns that `HOME` differs from `%USERPROFILE%`.** Claude Code reads
+  `%USERPROFILE%\.claude`. Run the script with `CLAUDE_CONFIG_DIR` set to that folder.
 
 ## Maintaining the kit
 
 - `hooks/` holds copies. Their source is `~/.claude/hooks` on the home machine; refresh them with
   `bash sync-from-home.sh`, never by hand.
-- `agents/` and `KIT.md` belong to this repo. Edit them here.
-- Tests: `bash tests/guard.sh` and `bash tests/install.sh` (the second one runs in a throwaway
-  `HOME`).
+- `agents/`, `KIT.md`, `bin/`, `settings/` and `templates/` belong to this repo. Edit them here.
+- Tests: `bash tests/guard.sh`, `bash tests/install.sh`, `bash tests/statusline.sh`. They simulate Windows
+  with a fake `cygpath` and a `jq` that writes CRLF. `tests/install.sh` runs in a throwaway `HOME`.

@@ -22,6 +22,8 @@
 set -u
 CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 INPUT=$(cat) || exit 0
+# Windows (Git Bash): jq.exe writes CRLF unless -b; a trailing \r breaks every comparison.
+case "${KIT_OS:-${OSTYPE:-}}" in msys*|cygwin*|windows) jq() { command jq -b "$@"; } ;; esac
 EVENT=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // ""' 2>/dev/null) || exit 0
 SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null) || exit 0
 REG="${TMPDIR:-/tmp}/claude-agent-guard-$(id -u)/$SESSION"
@@ -74,6 +76,7 @@ case "$EVENT" in
           DURATION=$((NOW - START))
         fi
         TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.agent_transcript_path // ""' 2>/dev/null)
+        TRANSCRIPT=${TRANSCRIPT//\\//}
         TRANSCRIPT="${TRANSCRIPT/#\~/$HOME}"
         TOOL_CALLS=""
         TOP_TOOLS=""

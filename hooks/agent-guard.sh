@@ -18,6 +18,8 @@ SETTINGS="$CFG/settings.json"
 deny() { echo "capability graph: $1" >&2; exit 2; }
 
 INPUT=$(cat) || deny "guard could not read input"
+# Windows (Git Bash): jq.exe writes CRLF unless -b; a trailing \r breaks every comparison.
+case "${KIT_OS:-${OSTYPE:-}}" in msys*|cygwin*|windows) jq() { command jq -b "$@"; } ;; esac
 IN_SUBAGENT=$(printf '%s' "$INPUT" | jq -r 'has("agent_id")' 2>/dev/null) || deny "guard could not parse input"
 AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // ""' 2>/dev/null) || deny "guard could not parse input"
 SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null) || SESSION=default
@@ -60,6 +62,7 @@ else
   # The live model is the one on the session's last assistant message (a /model switch shows up
   # there at once); settings.json holds only the default for new sessions, so it is the fallback.
   TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null) || TRANSCRIPT=
+  TRANSCRIPT=${TRANSCRIPT//\\//}
   CALLER=
   [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] && CALLER=$(tail -n 400 "$TRANSCRIPT" \
     | jq -Rr 'fromjson? | select(.type=="assistant") | .message.model // empty' 2>/dev/null | tail -1)
