@@ -20,12 +20,16 @@ bad() { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "$1"; }
 N=0
 newdata() { N=$((N + 1)); DATA="$TMP/data$N"; mkdir -p "$DATA"; }
 
-# j <model|-> <cost|-> <ctx|-> <sid>   ("-" leaves the field out)
+# j <model|-> <cost|-> <ctx|-> <sid> [tokens]   ("-" leaves the field out; tokens is raw JSON for
+#   total_input_tokens, left out when absent)
 j() {
   local parts=()
   [ "$1" != - ] && parts+=("\"model\":{\"display_name\":\"$1\"}")
   [ "$2" != - ] && parts+=("\"cost\":{\"total_cost_usd\":$2}")
-  [ "$3" != - ] && parts+=("\"context_window\":{\"used_percentage\":$3}")
+  local cw=()
+  [ "$3" != - ] && cw+=("\"used_percentage\":$3")
+  [ -n "${5:-}" ] && cw+=("\"total_input_tokens\":$5")
+  if [ "${#cw[@]}" -gt 0 ]; then local IFS=,; parts+=("\"context_window\":{${cw[*]}}"); fi
   parts+=("\"session_id\":\"$4\"")
   local IFS=,
   printf '{%s}' "${parts[*]}"
@@ -128,6 +132,29 @@ eq "windows mode line" 'Sonnet 5.5 | session $1.42 | month $1 / $250 (pace $133)
 case "$out" in *$'\r'*) bad "CR in output";; *) ok "no CR in output";; esac
 names=$(cd "$DATA/claude-kit/spend/2026-11" && printf '%s|' *)
 case "$names" in *$'\r'*) bad "CR in ledger file name";; *) ok "no CR in ledger file name ($names)";; esac
+
+# 9b. ctx in tokens: ctx <N>k, N = tokens / 1000 rounded half up; colour by size
+newdata
+eq "tokens 84000" 'Sonnet 5.5 | session $1.42 | month $1 / $250 (pace $133) | ctx 84k' "$(run "$(j "Sonnet 5.5" 1.42 - s1 84000)")"
+out=$(run "$(j M 1 - s 84499)"); case "$out" in *'| ctx 84k') ok "84499 -> 84k";; *) bad "84499: $out";; esac
+out=$(run "$(j M 1 - s 84500)"); case "$out" in *'| ctx 85k') ok "84500 -> 85k";; *) bad "84500: $out";; esac
+out=$(run "$(j M 1 - s 0)");     case "$out" in *'| ctx 0k') ok "0 -> 0k";; *) bad "0: $out";; esac
+out=$(run "$(j M 1 - s 999)");   case "$out" in *'| ctx 1k') ok "999 -> 1k";; *) bad "999: $out";; esac
+out=$(run "$(j M 1 - s 99999)" NO_COLOR=)
+case "$out" in *"${ESC}[32mctx 100k${ESC}[0m") ok "99999 is green (32)";; *) bad "99999: $out";; esac
+out=$(run "$(j M 1 - s 100000)" NO_COLOR=)
+case "$out" in *"${ESC}[33mctx 100k${ESC}[0m") ok "100000 is yellow (33)";; *) bad "100000: $out";; esac
+out=$(run "$(j M 1 - s 149999)" NO_COLOR=)
+case "$out" in *"${ESC}[33mctx 150k${ESC}[0m") ok "149999 is yellow (33)";; *) bad "149999: $out";; esac
+out=$(run "$(j M 1 - s 150000)" NO_COLOR=)
+case "$out" in *"${ESC}[31mctx 150k${ESC}[0m") ok "150000 is red (31)";; *) bad "150000: $out";; esac
+out=$(run "$(j M 1 - s 84000)")
+case "$out" in *"$ESC"*) bad "NO_COLOR ctx has an escape";; *) ok "NO_COLOR ctx has no escape";; esac
+out=$(run "$(j M 1 38.4 s 84000)"); case "$out" in *'| ctx 84k') ok "tokens win over percentage";; *) bad "both: $out";; esac
+out=$(run "$(j M 1 38.4 s '"abc"')"); case "$out" in *'| ctx 38%') ok "non-number tokens fall back to percentage";; *) bad "nan: $out";; esac
+out=$(printf '%s' "$(j M 1 - s 84000)" | env PATH="$TMP/fakebin:$PATH" KIT_OS=windows XDG_DATA_HOME="$DATA" NO_COLOR=1 KIT_TODAY=2026-11-16 bash "$SCRIPT" 2>/dev/null)
+case "$out" in *'| ctx 84k') ok "windows mode tokens";; *) bad "windows tokens: $out";; esac
+case "$out" in *$'\r'*) bad "CR in tokens output";; *) ok "no CR in tokens output";; esac
 
 # 10. garbage and empty stdin
 newdata

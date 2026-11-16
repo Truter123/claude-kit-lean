@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Claude Code status line: model | session cost | month spend vs budget (with pace) | context use.
-#   Sonnet 5.5 | session $1.42 | month $86 / $250 (pace $133) | ctx 38%
+# Claude Code status line: model | session cost | month spend vs budget (with pace) | context size.
+#   Sonnet 5.5 | session $1.42 | month $86 / $250 (pace $133) | ctx 84k
+# ctx is the last prompt in tokens (green < 100k, yellow from 100k, red from 150k); without
+#   token data it falls back to the plain used percentage (ctx 38%, no colour).
 # Ledger: ${XDG_DATA_HOME:-$HOME/.local/share}/claude-kit/spend/<YYYY-MM>/<session id>, one file
 #   per session holding "base last" (base absorbs the cost lost when /clear resets it).
 # Env: KIT_BUDGET_USD (default 250), KIT_TODAY (YYYY-MM-DD, default today), NO_COLOR (no ANSI),
@@ -18,10 +20,10 @@ case "${KIT_OS:-${OSTYPE:-}}" in msys*|cygwin*|windows) jq() { command jq -b "$@
 model=Claude
 in=
 IFS= read -r -d '' in
-out=$(jq -r '(.model.display_name // ""), (.cost.total_cost_usd // ""), (.context_window.used_percentage // ""), (.session_id // "")' <<<"$in") || out=
+out=$(jq -r '(.model.display_name // ""), (.cost.total_cost_usd // ""), (.context_window.used_percentage // ""), (.context_window.total_input_tokens // ""), (.session_id // "")' <<<"$in") || out=
 out=${out//$'\r'/}
 if [ -n "$out" ]; then
-  { IFS= read -r m; IFS= read -r cost; IFS= read -r ctx; IFS= read -r sid; } <<<"$out"
+  { IFS= read -r m; IFS= read -r cost; IFS= read -r ctx; IFS= read -r tok; IFS= read -r sid; } <<<"$out"
   [ -n "${m:-}" ] && model=$m
 else
   printf '%s\n' "$model"
@@ -31,6 +33,7 @@ fi
 num='^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$'
 [[ ${cost:-} =~ $num ]] || cost=
 [[ ${ctx:-} =~ $num ]] || ctx=
+[[ ${tok:-} =~ $num ]] || tok=
 budget=${KIT_BUDGET_USD:-250}
 [[ $budget =~ $num ]] || budget=250
 
@@ -52,7 +55,7 @@ nocolor=0
 [ -n "${NO_COLOR:-}" ] && nocolor=1
 
 line=$(KIT_CUR="$dir/$sid" KIT_MODEL="$model" awk \
-  -v c="$cost" -v ctx="$ctx" -v budget="$budget" -v today="$today" -v nocolor="$nocolor" '
+  -v c="$cost" -v ctx="$ctx" -v tok="$tok" -v budget="$budget" -v today="$today" -v nocolor="$nocolor" '
 FNR == 1 {
   b = $1 + 0; l = $2 + 0
   if (FILENAME == ENVIRON["KIT_CUR"]) {
@@ -79,7 +82,11 @@ END {
     seg = sprintf("%c[%dm%s%c[0m", 27, col, seg, 27)
   }
   s = sprintf("%s | session $%.2f | %s", ENVIRON["KIT_MODEL"], sess, seg)
-  if (ctx != "") s = s sprintf(" | ctx %d%%", int(ctx + 0.5))
+  if (tok != "") {
+    cs = sprintf("ctx %dk", int(tok / 1000 + 0.5))
+    if (!nocolor) cs = sprintf("%c[%dm%s%c[0m", 27, (tok >= 150000 ? 31 : (tok >= 100000 ? 33 : 32)), cs, 27)
+    s = s " | " cs
+  } else if (ctx != "") s = s sprintf(" | ctx %d%%", int(ctx + 0.5))
   print s
   fflush()
   if (c != "") { printf "%.6f %.6f\n", nb, nl > cur; close(cur) }

@@ -1,6 +1,6 @@
 ---
 name: worker
-description: One fully specified mechanical action on a cheap model - an exact old-to-new edit, one named command, or one bounded grep sweep. Never a judgment call or a code question that needs the graph.
+description: One fully specified mechanical action on a cheap model - one named command whose long output the caller does not need (tests, build, install, log search), one bounded grep sweep, or one mechanical change across many files. Never a judgment call, a single exact edit the caller can make itself, or a code question that needs the graph.
 model: haiku
 omitClaudeMd: true
 effort: low
